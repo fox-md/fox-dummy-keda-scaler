@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: golang-external-scaler
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golang-external-scaler
+  namespace: golang-external-scaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: golang-external-scaler
+  template:
+    metadata:
+      labels:
+        app: golang-external-scaler
+    spec:
+      containers:
+      - name: scaler
+        image: ghcr.io/fox-md/fox-dummy-keda-scaler:master
+        args: ["--debug"]
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 6000
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: golang-external-scaler
+  namespace: golang-external-scaler
+spec:
+  ports:
+  - port: 6000
+    targetPort: 6000
+  selector:
+    app: golang-external-scaler
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-1
+  namespace: golang-external-scaler
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: test-1
+  template:
+    metadata:
+      labels:
+        app: test-1
+    spec:
+      containers:
+      - name: http
+        image: nginx:latest
+        imagePullPolicy: Always
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: test-1
+  namespace: golang-external-scaler
+spec:
+  # Set these number of replicas if scaler returns active: false
+  # If minReplicaCount: 0 and active is false, scaler shows <unknown> current value
+  # Metrics:                                     ( current / target )
+  # "s0-dummy_capacity" (target average value):  <unknown> / 3
+  minReplicaCount: 1
+  scaleTargetRef:
+    name: test-1
+  pollingInterval: 15
+  triggers:
+    - type: external
+      metadata:
+        scalerAddress: golang-external-scaler.golang-external-scaler:6000
+        dummy_capacity: "10"
